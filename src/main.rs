@@ -21,12 +21,17 @@ pub enum Msg {
     Resize(),
 }
 
+pub struct Dimensions {
+    width: f64,
+    height: f64
+}
+
 pub struct App {
     gl: Option<GL>,
     node_ref: NodeRef,
     _render_loop: Option<AnimationFrame>,
     window: web_sys::Window,
-    window_dims: (f64, f64),
+    window_dims: Dimensions
 }
 
 #[allow(unused_unsafe)]
@@ -43,7 +48,7 @@ impl Component for App {
         // Do init stuff here
         let window = web_sys::window().expect("Window not available.");
 
-        log(format!("{}", "fppnasad"));        
+        log(format!("{}", "Initializing... "));        
 
         let _on_click = EventListener::new(&window, "resize", move |_event| {
             log("message".to_string());
@@ -54,7 +59,7 @@ impl Component for App {
             node_ref: NodeRef::default(),
             _render_loop: None,
             window: window,
-            window_dims: (0.0, 0.0),
+            window_dims: {Dimensions { width: 0.0, height: 0.0 }}
         }
     }
 
@@ -78,7 +83,7 @@ impl Component for App {
         // let height: String = self.window.inner_height().expect("error").as_f64().expect("error").to_string();
         // let width: String = self.window.inner_width().expect("error").as_f64().expect("error").to_string();
 
-        log(format!("View -> Width: {}, Height: {}", self.window_dims.0, self.window_dims.1).to_string());
+        log(format!("View -> Width: {}, Height: {}", self.window_dims.width, self.window_dims.height).to_string());
 
         // let link = _ctx.link().clone();
         // let resize = link.callback(|e: Event| Msg::Resize(e));
@@ -87,7 +92,7 @@ impl Component for App {
         html! {
             <div>
                 <div class="test"><h1>{ "Hello world!" }</h1></div>
-                <canvas class="background" ref={self.node_ref.clone()} width={self.window_dims.0.to_string()} height={self.window_dims.1.to_string()} />
+                <canvas class="background" ref={self.node_ref.clone()} width={self.window_dims.width.to_string()} height={self.window_dims.height.to_string()} />
                 // <canvas class="background" ref={self.node_ref.clone()} width={"1674"} height={"1301"} />
             </div>
         }
@@ -95,30 +100,25 @@ impl Component for App {
     
 
     fn rendered(&mut self, ctx: &Context<Self>, first_render: bool) {
-        // Once rendered, store references for the canvas and GL context. These can be used for
-        // resizing the rendering area when the window or canvas element are resized, as well as
-        // for making GL calls.
+        // Post canvas render initialization
 
-        self.window_dims = (self.window.inner_width().expect("error").as_f64().expect("error"),
-                            self.window.inner_height().expect("error").as_f64().expect("error"));
+        // Set window_dims
+        self.window_dims.width = self.window.inner_width().expect("error").as_f64().expect("error");
+        self.window_dims.height = self.window.inner_height().expect("error").as_f64().expect("error");
+        log(format!("Rendered -> Width: {}, Height: {}", self.window_dims.width, self.window_dims.height).to_string());
 
-        log(format!("Rendered -> Width: {}, Height: {}", self.window_dims.0, self.window_dims.1).to_string());
-
+        // Get WebGL context
         let canvas = self.node_ref.cast::<HtmlCanvasElement>().unwrap();
-
         let gl: JsValue = canvas.get_context("webgl2").unwrap().into();
         let gl: GL = gl.into();
-
         self.gl = Some(gl);
         let gl = self.gl.as_ref().expect("GL Context not initialized!");
 
-        // In a more complex use-case, there will be additional WebGL initialization that should be
-        // done here, such as enabling or disabling depth testing, depth functions, face
-        // culling etc.
-
-        gl.viewport(0, 0, self.window_dims.0 as i32, self.window_dims.1 as i32);
+        // WebGL initialization
+        gl.viewport(0, 0, self.window_dims.width as i32, self.window_dims.height as i32);
         gl.clear_color(0.0, 0.0, 0.0, 1.0);
 
+        // Setup request_animation_frame()
         if first_render {
             // The callback to request animation frame is passed a time value which can be used for
             // rendering motion independent of the framerate which may vary.
@@ -126,12 +126,12 @@ impl Component for App {
                 let link = ctx.link().clone();
                 request_animation_frame(move |time| link.send_message(Msg::Render(time)))
             };
-
-            ctx.link().send_message(Msg::Resize());
-
             // A reference to the handle must be stored, otherwise it is dropped and the render
             // won't occur.
             self._render_loop = Some(handle);
+
+            // Resize the initial canvas
+            ctx.link().send_message(Msg::Resize());
         }
     }
 }
@@ -216,7 +216,7 @@ impl App {
 
         // Add perspective transform
         let proj: Mat4 = Mat4::perspective_rh_gl(45.0 * 3.14195 / 180.0,
-                                                 self.window_dims.0 as f32/ self.window_dims.1 as f32,
+                                                 self.window_dims.width as f32/ self.window_dims.height as f32,
                                                  0.1,
                                                  1000.0);
         let perspective = gl.get_uniform_location(&shader_program, "u_proj");
