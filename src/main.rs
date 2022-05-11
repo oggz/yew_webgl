@@ -1,6 +1,8 @@
 #![allow(unused_imports)]
+
 #[allow(dead_code)]
 
+use std::ops::Not;
 use gloo_render::{request_animation_frame, AnimationFrame};
 use gloo_console::log;
 use gloo_events::{EventListener};
@@ -50,9 +52,9 @@ impl Component for App {
 
         log(format!("{}", "Initializing... "));        
 
-        let _on_click = EventListener::new(&window, "resize", move |_event| {
-            log("message".to_string());
-        });
+        // let _on_click = EventListener::new(&window, "resize", move |_event| {
+        //     log("message".to_string());
+        // });
 
         Self {
             gl: None,
@@ -151,10 +153,14 @@ impl App {
         let vert_shader = gl.create_shader(GL::VERTEX_SHADER).unwrap();
         gl.shader_source(&vert_shader, vert_code);
         gl.compile_shader(&vert_shader);
+        let vert_err = format!("{}", gl.get_shader_info_log(&vert_shader).expect("foobat")).to_string();
+        vert_err.is_empty().not().then(|| log(vert_err));
 
         let frag_shader = gl.create_shader(GL::FRAGMENT_SHADER).unwrap();
         gl.shader_source(&frag_shader, frag_code);
         gl.compile_shader(&frag_shader);
+        let frag_err = format!("{}", gl.get_shader_info_log(&frag_shader).expect("foobat")).to_string();
+        frag_err.is_empty().not().then(|| log(frag_err));
 
         let shader_program = gl.create_program().unwrap();
         gl.attach_shader(&shader_program, &vert_shader);
@@ -180,34 +186,57 @@ impl App {
         gl.buffer_data_with_array_buffer_view(GL::ARRAY_BUFFER, &verts, GL::STATIC_DRAW);
 
         // Attach the position vector as an attribute for the GL context.
-        let position = gl.get_attrib_location(&shader_program, "a_position") as u32;
+        let position = 0 as u32;
         gl.vertex_attrib_pointer_with_i32(position, 3, GL::FLOAT, false, 6*4, 0);
         gl.enable_vertex_attrib_array(position);
 
-        let color = gl.get_attrib_location(&shader_program, "a_color") as u32;
+        let color = 1 as u32;
         gl.vertex_attrib_pointer_with_i32(color, 3, GL::FLOAT, false, 6*4, 3*4);
         gl.enable_vertex_attrib_array(color);
+
+        // log(color.to_string());
 
 
         
         // Instance vbo
-        let mut translations: Vec<f32> = Vec::with_capacity(100);
-        for i in 0..300 {
-            // translations.push(Mat4::from_translation(Vec3::new(0.0, 0.0, 1.0 * i as f32)));
-            translations.push(i as f32);
+        const LEN: usize = 16 * 100;
+        let mut translations: [f32; LEN] = [0.0; LEN];
+        for i in 0..100 {
+            // Create modelview matrix for each instance
+            let trans_offset: f32 = -50.0 + i as f32;
+            
+            let time = timestamp as f32 / 300.0;
+            let scale = Vec3::new(3.0, 3.0, 3.0);
+            let axis  = Vec3::new(1.0, 0.0, 0.0);
+            let rotation = glam::Quat::from_axis_angle(axis, time * 0.3);
+            let translation = Vec3::new(1.0 * trans_offset, -1.0 * trans_offset, -50.0);
+            let modelview: Mat4 = Mat4::from_scale_rotation_translation(scale, rotation, translation);
+
+            // Load it into an array for js consumption
+            let matrix = modelview.to_cols_array();
+            let offset = i * 16;
+            for j in 0..16 {
+                translations[offset + j] = matrix[j];
+            }
         }
 
+        // let vec: Vec<f32> = translations.iter().fold(vec![], |acc, slice| slice.to_vec().map(|x| acc.push(x)));
         let js_translations = js_sys::Float32Array::from(translations.as_slice());
+        // for chunk in js_translations.to_vec().chunks(16) {
+        //     log(format!("{:?}", chunk));
+        // }
+        // log(format!("[3.0, 0.0, 0.0, 0.0, 0.0, 2.901498, 0.76243615, 0.0, 0.0, -0.76243615,------>{:?}", js_translations.to_vec()));
         
         let instance_buffer = gl.create_buffer().unwrap();
         gl.bind_buffer(GL::ARRAY_BUFFER, Some(&instance_buffer));
         gl.buffer_data_with_array_buffer_view(GL::ARRAY_BUFFER, &js_translations, GL::STATIC_DRAW);
 
-        let translation_attr = gl.get_attrib_location(&shader_program, "a_translation") as u32;
-        gl.vertex_attrib_pointer_with_i32(translation_attr, 3, GL::FLOAT, false, 3*4, 0);
-        gl.enable_vertex_attrib_array(translation_attr);
-        gl.vertex_attrib_divisor(translation_attr, 1);
-
+        for i in 0..4 {
+            let attr_loc = 2 + i;
+            gl.vertex_attrib_pointer_with_i32(attr_loc, 4, GL::FLOAT, false, 4*4*4, (i*4*4) as i32);
+            gl.enable_vertex_attrib_array(attr_loc);
+            gl.vertex_attrib_divisor(attr_loc, 1);
+        }
         
 
         // attach the time as a uniform for the GL context.
@@ -234,6 +263,8 @@ impl App {
         let modelview_loc = gl.get_uniform_location(&shader_program, "u_modelview");
         gl.uniform_matrix4fv_with_f32_array(modelview_loc.as_ref(), false, modelview.as_ref());
 
+        // log(format!("-------->{:?}", modelview));
+        
         gl.draw_arrays_instanced(GL::TRIANGLES, 0, 3, 100);
         // gl.draw_arrays(GL::TRIANGLES, 0, 3);
 
