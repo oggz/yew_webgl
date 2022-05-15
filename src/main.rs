@@ -1,18 +1,22 @@
 #![allow(unused_imports)]
-
-use std::fmt::format;
 #[allow(dead_code)]
 
 use std::ops::Not;
 use gloo::render::{request_animation_frame, AnimationFrame};
-use gloo::console::log;
 use gloo::events::EventListener;
+use gloo::console::log;
 use rand::Rng;
 use wasm_bindgen::prelude::*;
 use web_sys::{HtmlCanvasElement, WebGl2RenderingContext as GL, Event};
 use yew::html::Scope;
-use yew::{html, Component, Context, Html, NodeRef};
+use yew::{html, Component, Context, Html, NodeRef, Callback, MouseEvent};
 use glam::{Mat4, Vec3, Vec4};
+
+mod util;
+mod shader;
+use crate::util::log;
+use crate::shader::Shader;
+
 
 pub enum Msg {
     Render(f64),
@@ -32,13 +36,9 @@ pub struct App {
     window_dims: Dimensions,
     mouse_move: EventListener,
     view: Mat4,
+    shader: Shader,
 }
 
-#[allow(unused_unsafe)]
-fn log(message: String) -> bool {
-    unsafe { log!(message) }
-    true
-}
 
 impl Component for App {
     type Message = Msg;
@@ -67,7 +67,8 @@ impl Component for App {
             }),
             view: Mat4::look_at_rh(Vec3::new(0.0, 0.0, 75.0),
                                    Vec3::new(0.0, 0.0, 0.0),
-                                   Vec3::new(0.0, 1.0, 0.0))
+                                   Vec3::new(0.0, 1.0, 0.0)),
+            shader: Shader::new(include_str!("./basic.vert"), include_str!("./basic.frag")),
         }
     }
 
@@ -93,7 +94,9 @@ impl Component for App {
 
         let width = self.window_dims.width.to_string();
         let height = self.window_dims.height.to_string();
-        
+
+        // let on_click = Callback::from(|e: MouseEvent| log("message".to_string()));
+
         // initialize the canvas
         html! {
             <div>
@@ -133,6 +136,8 @@ impl Component for App {
         gl.viewport(0, 0, self.window_dims.width as i32, self.window_dims.height as i32);
         gl.clear_color(0.0, 0.0, 0.0, 1.0);
 
+        // Compile Shader
+        self.shader.compile(self.gl.clone());
 
         // Setup request_animation_frame()
         if first_render {
@@ -157,36 +162,13 @@ impl App {
         // gl.clear_color(0.0, 0.0, 0.0, 1.0);
         gl.clear(GL::COLOR_BUFFER_BIT | GL::DEPTH_BUFFER_BIT);
 
-
-        
         // Shader program
-        let vert_code = include_str!("./basic.vert");
-        let frag_code = include_str!("./basic.frag");
+        self.shader.clone().use_shader();
 
-        let vert_shader = gl.create_shader(GL::VERTEX_SHADER).unwrap();
-        gl.shader_source(&vert_shader, vert_code);
-        gl.compile_shader(&vert_shader);
-        let vert_err = format!("{}", gl.get_shader_info_log(&vert_shader).expect("foobat")).to_string();
-        vert_err.is_empty().not().then(|| log(vert_err));
-
-        let frag_shader = gl.create_shader(GL::FRAGMENT_SHADER).unwrap();
-        gl.shader_source(&frag_shader, frag_code);
-        gl.compile_shader(&frag_shader);
-        let frag_err = format!("{}", gl.get_shader_info_log(&frag_shader).expect("foobat")).to_string();
-        frag_err.is_empty().not().then(|| log(frag_err));
-
-        let shader_program = gl.create_program().unwrap();
-        gl.attach_shader(&shader_program, &vert_shader);
-        gl.attach_shader(&shader_program, &frag_shader);
-        gl.link_program(&shader_program);
-
-        gl.use_program(Some(&shader_program));
-
-
-        
+        // Create VAO 0
         let vao = gl.create_vertex_array().unwrap();
         gl.bind_vertex_array(Some(&vao));
-        
+
         // Verts
         let vertices: Vec<f32> = vec![
             // vertices (3) |  colors(3)
@@ -247,16 +229,16 @@ impl App {
             gl.vertex_attrib_divisor(attr_loc, 1);
         }
 
-        
+        let shader_program = &self.shader.clone().shader_id().unwrap();
 
         // Attach the time as a uniform for the GL context.
-        let u_time = gl.get_uniform_location(&shader_program, "u_time");
+        let u_time = gl.get_uniform_location(shader_program, "u_time");
         gl.uniform1f(u_time.as_ref(), timestamp as f32);
 
         // Attach the view matrix.
         // let mut rng = rand::thread_rng();
         let time = timestamp * 0.003;
-        let u_view = gl.get_uniform_location(&shader_program, "u_view");
+        let u_view = gl.get_uniform_location(shader_program, "u_view");
         let rotation = Mat4::from_rotation_z(timestamp as f32 * 0.001);
         let translation = Mat4::from_translation(Vec3::new(0.0, 0.0, time.sin() as f32 * 10.0));
         let view = self.view * rotation * translation;
@@ -269,7 +251,7 @@ impl App {
                                                  self.window_dims.width as f32/ self.window_dims.height as f32,
                                                  0.1,
                                                  1000.0);
-        let u_proj = gl.get_uniform_location(&shader_program, "u_proj");
+        let u_proj = gl.get_uniform_location(shader_program, "u_proj");
         gl.uniform_matrix4fv_with_f32_array(u_proj.as_ref(), false, proj.as_ref());
 
         // Add modelview transform
@@ -281,7 +263,7 @@ impl App {
         let translation = Vec3::new((time / 2.0).sin() * 2.0, time % 20.0 - 10.0, -50.0);
         let modelview: Mat4 = Mat4::from_scale_rotation_translation(scale, rotation, translation);
         // log(format!("{}", modelview).to_string());
-        let modelview_loc = gl.get_uniform_location(&shader_program, "u_modelview");
+        let modelview_loc = gl.get_uniform_location(shader_program, "u_modelview");
         gl.uniform_matrix4fv_with_f32_array(modelview_loc.as_ref(), false, modelview.as_ref());
 
 

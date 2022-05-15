@@ -1,5 +1,5 @@
 [package]
-name = "yew-webgl"
+name = "yew_webgl"
 version = "0.1.0"
 authors = ["Miklós Tusz <mdtusz@gmail.com>"]
 edition = "2021"
