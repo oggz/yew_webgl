@@ -22,6 +22,7 @@ mat4 translation(vec3 delta)
 void main() {
   vColor = vec4(vec3(a_color), 1.0);
 
-  gl_Position = u_proj * u_view * a_modelview * vec4(a_position, 1.0);
-  // gl_Position = u_proj * u_modelview * vec4(a_position, 1.0);
+    gl_Position = u_proj * u_view * a_modelview * vec4(a_position, 1.0);
+    // gl_Position = u_proj * u_view * vec4(a_position, 1.0);
+    // gl_Position = u_proj * u_modelview * vec4(a_position, 1.0);
 }

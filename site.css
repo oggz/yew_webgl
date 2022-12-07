@@ -1,7 +1,17 @@
 html, body {
     width: 100%;
     height: 100%;
-    margin: 0;
+    /* margin: 1em; */
+    font-size: 20px;
+    font-weight: 100;
+    color: Green;
+    color: #fff;
+    text-shadow:
+        0 0 4px #fff,
+        0 0 11px #fff,
+        0 0 19px #fff,
+        0 0 40px #0fa,
+        0 0 80px #0fa;
 }
 
 canvas {
@@ -15,14 +25,68 @@ canvas {
     /* pointer-events: none; */
 }
 
+.navbar {
+    color: black;
+    background-color: rgba(10, 30, 50, 0.75);
+    display: flex;
+    flex-direction: row;
+}
+
 h1 {
     font-size: 80px;
-    color: Black;
+    font-weight: 300;
+    color: Green;
+    color: #fff;
+   text-shadow:
+      0 0 4px #fff,
+      0 0 11px #fff,
+      0 0 19px #fff,
+      0 0 40px #0fa,
+      0 0 80px #0fa;
     background: rgba(0, 0, 0, 0);
 }
 
-.test {
+.background {
+    position: fixed;
+    margin: 0px;
+    padding: 0px;
+}
+
+.container {
     display: flex;
     justify-content: center;
     align-items: center;
+    flex-direction: column;
+}
+
+.radius-container {
+    border-radius: 10px;
+    background-color: rgba(10, 30, 50, 0.75);
+    max-width: 75%;
+    text-align: center;
+}
+
+.start-low {
+    margin-top: 50em;
+}
+
+.title {
+    margin-top: 10px;
+    margin-bottom: 10px;
+    margin-left: 20px;
+    margin-right: 20px;
+    user-select: none;
+}
+
+.spacer {
+    height: 100%;
+}
+
+@media only screen and (max-width:720px) {
+    .container {
+        font-size: 12px;
+    }
+    button {
+        min-height: 45px;
+    }
 }

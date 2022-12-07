@@ -1,26 +1,42 @@
 #![allow(unused_imports)]
 #[allow(dead_code)]
 
+use std::borrow::{BorrowMut, Borrow};
+use std::ops::Deref;
 use std::ops::Not;
 use gloo::render::{request_animation_frame, AnimationFrame};
 use gloo::events::EventListener;
 use gloo::console::log;
+use gloo::timers::callback::Timeout;
+use mesh::Mesh;
 use rand::Rng;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 use web_sys::{HtmlCanvasElement, WebGl2RenderingContext as GL, Event};
 use yew::html::Scope;
-use yew::{html, Component, Context, Html, NodeRef, Callback, MouseEvent};
-use glam::{Mat4, Vec3, Vec4};
+use yew::use_state;
+use yew::{html, function_component, Component, Context, Html, NodeRef, Callback, MouseEvent, KeyboardEvent, classes};
+use glam::*;
 
 mod util;
 mod shader;
+mod mesh;
+mod renderer;
+mod camera;
+mod components;
 use crate::util::log;
 use crate::shader::Shader;
+// use crate::components::HelloWorld;
+
 
 
 pub enum Msg {
     Render(f64),
     Resize(),
+    Zoom(bool),
+    KeyPressed(KeyboardEvent),
+    AddTriangles(),
+    RemoveTriangles(),
 }
 
 pub struct Dimensions {
@@ -37,7 +53,11 @@ pub struct App {
     mouse_move: EventListener,
     view: Mat4,
     shader: Shader,
+    mesh: Mesh,
+    tpos: Vec<Mat4>,
 }
+
+
 
 
 impl Component for App {
@@ -60,15 +80,17 @@ impl Component for App {
             gl: None,
             node_ref: NodeRef::default(),
             _render_loop: None,
-            window: window,
+            window,
             window_dims: {Dimensions { width: 0.0, height: 0.0 }},
             mouse_move: EventListener::new(&document, "keypress", move |_event| {
                 log("message".to_string());
             }),
             view: Mat4::look_at_rh(Vec3::new(0.0, 0.0, 75.0),
                                    Vec3::new(0.0, 0.0, 0.0),
-                                   Vec3::new(0.0, 1.0, 0.0)),
+                                   Vec3::new(0.0, 1.0, 75.0)),
             shader: Shader::new(include_str!("./basic.vert"), include_str!("./basic.frag")),
+            mesh: Mesh::new(vec![], vec![]),
+            tpos: vec![],
         }
     }
 
@@ -79,68 +101,146 @@ impl Component for App {
                 false
             }
             Msg::Resize() => {
+                self.window_dims.width = self.window.outer_width().expect("error").as_f64().expect("error");
+                self.window_dims.height = self.window.outer_height().expect("error").as_f64().expect("error");
                 log("Resize was called.".to_string());
                 true
+            }
+            Msg::Zoom(dir) => {
+                let zoom_amount = 200.0;
+                match dir {
+                    true => {
+                        let (s, r, t) = self.view.to_scale_rotation_translation();
+                        let t = Vec3::new(t.x, t.y, t.z + zoom_amount);
+                        self.view = Mat4::from_scale_rotation_translation(s, r, t);
+                        return false;
+                    },
+                    false => {
+                        let (s, r, t) = self.view.to_scale_rotation_translation();
+                        let t = Vec3::new(t.x, t.y, t.z - zoom_amount);
+                        self.view = Mat4::from_scale_rotation_translation(s, r, t);
+                        return false;
+                    }
+                    _ => ()
+                }
+                
+                true
+            }
+            Msg::KeyPressed(e) => {
+                log("KeyPressed was called.".to_string());
+
+                match e.key().as_str() {
+                    "w" => {
+                        let (s, r, t) = self.view.to_scale_rotation_translation();
+                        let t = Vec3::new(t.x, t.y, t.z + 50.0);
+                        self.view = Mat4::from_scale_rotation_translation(s, r, t);
+                        return false;
+                    },
+                    "s" => {
+                        let (s, r, t) = self.view.to_scale_rotation_translation();
+                        let t = Vec3::new(t.x, t.y, t.z - 50.0);
+                        self.view = Mat4::from_scale_rotation_translation(s, r, t);
+                        return false;
+                    }
+                    _ => {return false}
+                }
+            }
+            Msg::AddTriangles() => {
+                App::add_triangles(self);
+                true
+            }
+            Msg::RemoveTriangles() => {
+                if !(self.tpos.len() <= 0) {
+                    self.tpos.drain(self.tpos.len()-300..);
+                    true
+                }
+                else {
+                    true
+                }
             }
         }
     }
 
-    fn view(&self, _ctx: &Context<Self>) -> Html {
+    fn view(&self, ctx: &Context<Self>) -> Html {
         // Print window dims
         log(format!("View -> Width: {}, Height: {}", self.window_dims.width, self.window_dims.height).to_string());
 
-        // let link = _ctx.link().clone();
-        // let resize = link.callback(|e: Event| Msg::Resize(e));
-
+        // Window dims from window after initial render.
         let width = self.window_dims.width.to_string();
         let height = self.window_dims.height.to_string();
-
-        // let on_click = Callback::from(|e: MouseEvent| log("message".to_string()));
+        let tcount = self.tpos.len().to_string();
 
         // initialize the canvas
         html! {
-            <div>
-                <div id="titlediv" class="test"><h1>{ "Hello world!" }</h1></div>
-                <canvas id="bg-canvas" class="background" ref={self.node_ref.clone()} width={width} height={height}/>
-                // <canvas class="background" ref={self.node_ref.clone()} width={"1674"} height={"1301"} />
+        <div
+            onkeypress={ctx.link().callback(|_| Msg::Resize())}>
+          <div class="container">
+            <div class={classes!( "radius-container")}>
+              <p> {"Personal website is down for maintenance. In the mean time please enjoy this demo! It utilizes Rust copmiled to web assembly(wasm) in order to allow greater performance than js/ts. Use the buttons below to add/remmove triangles and to zoom in/out. Zoom out to break the illusion."} </p>
+              <p> {"Code is not yet optimized and triangle postion update math is inefficient and single threaded so more traingles will slow down rendering rather quickly on older hardware, however your browser should remain responsive as it implements request_animation_frame. Code is available on my "}<a href="http://github.com/oggz/yew_webgl">{"github."}</a> </p>
+              <p> {format!("{}: {}", "Triangle count", {tcount})} </p>
+              <button onclick={ctx.link().callback(|_| Msg::AddTriangles())}>{"Moar triangles"}</button>
+              <button onclick={ctx.link().callback(|_| Msg::RemoveTriangles())}>{"Less triangles"}</button>
+              <button onclick={ctx.link().callback(|_| Msg::Zoom(true))}>{"Zoom in"}</button>
+              <button onclick={ctx.link().callback(|_| Msg::Zoom(false))}>{"Zoom out"}</button>
             </div>
+          </div>
+          <canvas id="bg-canvas" class="background" ref={self.node_ref.clone()} width={width} height={height}/>
+        </div>
         }
    }
     
 
     fn rendered(&mut self, ctx: &Context<Self>, first_render: bool) {
+        let link = ctx.link().clone();
 
-        // let document = self.window.document().expect("gppasd");
-        // document.add_event_listener(move |event: Event| {log("message".to_string())});
+            // set window_dims
+            log(format!("Rendered -> Width: {}, Height: {}", self.window_dims.width, self.window_dims.height + 100.0).to_string());
 
-        let document  = self.window.document().expect("Document not available");
-        let element = document.get_element_by_id("bg-canvas").expect("Element not available");
-        self.mouse_move = EventListener::new(&element, "click", move |_event| {
-            log("message".to_string());
-        });
-        // log(format!("{:?}", _on_mouse_move.target()));
+            // Get WebGL context
+            let canvas = self.node_ref.cast::<HtmlCanvasElement>().unwrap();
+            let gl: JsValue = canvas.get_context("webgl2").unwrap().into();
+            let gl: GL = gl.into();
+            self.gl = Some(gl);
+            let gl = self.gl.as_ref().expect("GL Context not initialized!");
 
-        // Set window_dims
-        self.window_dims.width = self.window.inner_width().expect("error").as_f64().expect("error");
-        self.window_dims.height = self.window.inner_height().expect("error").as_f64().expect("error");
-        log(format!("Rendered -> Width: {}, Height: {}", self.window_dims.width, self.window_dims.height).to_string());
+            // WebGL initialization
+            gl.viewport(0, 0, self.window_dims.width as i32, self.window_dims.height as i32);
+            gl.clear_color(0.0, 0.0, 0.0, 1.0);
+            gl.enable(GL::DEPTH_TEST);
 
-        // Get WebGL context
-        let canvas = self.node_ref.cast::<HtmlCanvasElement>().unwrap();
-        let gl: JsValue = canvas.get_context("webgl2").unwrap().into();
-        let gl: GL = gl.into();
-        self.gl = Some(gl);
-        let gl = self.gl.as_ref().expect("GL Context not initialized!");
+            gl.enable(GL::BLEND);
+            gl.blend_func(GL::ONE, GL::ONE_MINUS_SRC_ALPHA);
 
-        // WebGL initialization
-        gl.viewport(0, 0, self.window_dims.width as i32, self.window_dims.height as i32);
-        gl.clear_color(0.0, 0.0, 0.0, 1.0);
-
-        // Compile Shader
-        self.shader.compile(self.gl.clone());
-
+        
         // Setup request_animation_frame()
         if first_render {
+            log(format!("{:?}", "first render"));
+
+            // let document  = self.window.document().expect("Document not available");
+            // let element = document.get_element_by_id("bg-canvas").expect("Element not available");
+            self.mouse_move = EventListener::new(&self.window.window(), "resize", move |_event| {
+                log("resized".to_string());
+                    link.send_message(Msg::Resize());
+            });
+            // self.mouse_move = EventListener::new(&document, "keydown", move |_event| {
+            //     log("message".to_string());
+            //     if let Some(e) = _event.dyn_ref::<KeyboardEvent>() {
+            //         log(e.key_code().to_string());
+            //         link.send_message(Msg::KeyPressed(e.clone()));
+            //     }
+            // });
+            
+            // log(format!("{:?}", _on_mouse_move.target()));
+
+            // Compile Shader
+            self.shader.compile(self.gl.clone());
+
+            // Send mesh data to GPU
+            self.mesh.bind_buffers(self.gl.as_ref());
+
+
+            App::add_triangles(self);
             // The callback to request animation frame is passed a time value which can be used for
             // rendering motion independent of the framerate which may vary.
             let handle = {
@@ -156,79 +256,87 @@ impl Component for App {
 }
 
 impl App {
+    fn add_triangles(&mut self) {
+        let mut rng = rand::thread_rng();
+        for i in 0..300 {
+
+            let scale = Vec3::new(10.0 * rng.gen::<f32>(),
+                                  10.0 * rng.gen::<f32>(),
+                                  10.0 * rng.gen::<f32>());
+            let axis  = Vec3::new(1.0 * rng.gen::<f32>(),
+                                  1.0 * rng.gen::<f32>(),
+                                  1.0 * rng.gen::<f32>());
+            let rotation = Quat::from_axis_angle(axis, rng.gen::<f32>());
+            let translation = Vec3::new((rng.gen::<f32>() - 0.5) * 600.0,
+                                        (rng.gen::<f32>() - 0.5) * 600.0,
+                                        (rng.gen::<f32>() - 1.0) * 600.0);
+            let modelview: Mat4 = Mat4::from_scale_rotation_translation(scale, rotation, translation);
+
+            self.tpos.push(modelview);
+        }
+    }
+    
     fn render_gl(&mut self, timestamp: f64, link: &Scope<Self>) {
         let gl = self.gl.as_ref().expect("GL Context not initialized!");
 
-        // gl.clear_color(0.0, 0.0, 0.0, 1.0);
+        // Clear framebuffer
         gl.clear(GL::COLOR_BUFFER_BIT | GL::DEPTH_BUFFER_BIT);
 
         // Shader program
         self.shader.clone().use_shader();
 
-        // Create VAO 0
-        let vao = gl.create_vertex_array().unwrap();
-        gl.bind_vertex_array(Some(&vao));
 
-        // Verts
-        let vertices: Vec<f32> = vec![
-            // vertices (3) |  colors(3)
-            -1.0, -1.0, 0.0, 1.0, 0.0, 0.0,
-            -1.0,  1.0, 0.0, 0.0, 1.0, 0.0,
-             1.0,  0.0, 0.0, 0.0, 0.0, 1.0,
-        ];
-        let vertex_buffer = gl.create_buffer().unwrap();
-        let verts = js_sys::Float32Array::from(vertices.as_slice());
-
-        gl.bind_buffer(GL::ARRAY_BUFFER, Some(&vertex_buffer));
-        gl.buffer_data_with_array_buffer_view(GL::ARRAY_BUFFER, &verts, GL::STATIC_DRAW);
-
-        // Attach the position vector as an attribute for the GL context.
-        let position = 0 as u32;
-        gl.vertex_attrib_pointer_with_i32(position, 3, GL::FLOAT, false, 6*4, 0);
-        gl.enable_vertex_attrib_array(position);
-
-        let color = 1 as u32;
-        gl.vertex_attrib_pointer_with_i32(color, 3, GL::FLOAT, false, 6*4, 3*4);
-        gl.enable_vertex_attrib_array(color);
-
-
-
-        // Create instance VBO data
-        const LEN: usize = 16 * 100;
-        let mut translations: [f32; LEN] = [0.0; LEN];
-        for i in 0..100 {
+        // Update instance VBO data (this is horribly inefficient. It's been a while since i've done any linear algebra.
+        // Should store translation, rotation, scale for each instance instead of Mat4 modelview.
+        let mut tpos = vec![];
+        // let mut rng = rand::thread_rng();
+        for i in 0..self.tpos.len() {
             // Create modelview matrix for each instance
-            let trans_offset: f32 = -50.0 + i as f32;
+            // let trans_offset: f32 = -50.0 + i as f32;
             
-            let time = timestamp as f32 / 300.0;
-            let scale = Vec3::new(3.0, 3.0, 3.0);
-            let axis  = Vec3::new(1.0, 0.0, 0.0);
-            let rotation = glam::Quat::from_axis_angle(axis, time * 0.3 * trans_offset);
-            let translation = Vec3::new(1.0 * trans_offset + (time * 0.3).sin(), -1.0 * trans_offset, 0.0);
-            let modelview: Mat4 = Mat4::from_scale_rotation_translation(scale, rotation, translation);
+            // let time = timestamp as f32 / 300.0;
+            // let scale = Vec3::new(2.0, 2.0, 2.0);
+            // let axis  = Vec3::new(1.0, 0.0, 0.0);
+            // let rotation = glam::Quat::from_axis_angle(axis, time * 0.3 * trans_offset);
+            // let translation = Vec3::new(1.0 * trans_offset + (time * 0.3).sin(), -1.0 * trans_offset, 0.0);
+            // let modelview: Mat4 = Mat4::from_scale_rotation_translation(scale, rotation, translation);
 
-            // Load it into an array for js consumption
-            let matrix = modelview.to_cols_array();
-            let offset = i * 16;
-            for j in 0..16 {
-                translations[offset + j] = matrix[j];
+            let axis  = Vec3::new(1.0, 0.0, 1.0);
+            let rotation = Mat4::from_quat(Quat::from_axis_angle(axis, 0.05));
+            let translation = Mat4::from_translation(Vec3::new(0.0, -0.5, 0.0));
+            // let new_modelview = Mat4::from_rotation_translation(rotation, translation);
+            
+            if self.tpos[i].to_scale_rotation_translation().2.y < -300.0 {
+                // log(format!("{:?}", self.tpos[i].to_scale_rotation_translation().2.y()));
+                self.tpos[i] = Mat4::from_translation(Vec3::new(0.0, 600.0, 0.0)) * self.tpos[i];
+            }
+
+            let modelview: Mat4 = translation * self.tpos[i] * rotation;
+
+            self.tpos[i] = modelview;
+            for i in modelview.to_cols_array() {
+                tpos.push(i);
             }
         }
 
-        // Create instance VBO
-        let instance_buffer = gl.create_buffer().unwrap();
-        gl.bind_buffer(GL::ARRAY_BUFFER, Some(&instance_buffer));
-        let js_translations = js_sys::Float32Array::from(translations.as_slice());
-        gl.buffer_data_with_array_buffer_view(GL::ARRAY_BUFFER, &js_translations, GL::STATIC_DRAW);
+        // let mut tpos = vec![];
+        // self.tpos = self.tpos.iter()
+        //     .map(|m| {
+        //         m.mul_mat4(&Mat4::from_translation(Vec3::new(0.0, -0.01, 0.0)))
+        //             .mul_mat4(other)
+        //     }).collect();
+        // for modelview in self.tpos.clone() {
+        //     for i in modelview.to_cols_array() {
+        //         tpos.push(i);
+        //     }
+        // }
+        
+        let mesh = self.mesh.borrow_mut();
+        mesh.set_instance_data(self.gl.as_ref(), tpos.as_slice());
+        
 
-        // Set up attrib pointers
-        for i in 0..4 {
-            let attr_loc = 2 + i;
-            gl.vertex_attrib_pointer_with_i32(attr_loc, 4, GL::FLOAT, false, 4*4*4, (i*4*4) as i32);
-            gl.enable_vertex_attrib_array(attr_loc);
-            gl.vertex_attrib_divisor(attr_loc, 1);
-        }
 
+        // Set shader uniforms
         let shader_program = &self.shader.clone().shader_id().unwrap();
 
         // Attach the time as a uniform for the GL context.
@@ -239,37 +347,26 @@ impl App {
         // let mut rng = rand::thread_rng();
         let time = timestamp * 0.003;
         let u_view = gl.get_uniform_location(shader_program, "u_view");
-        let rotation = Mat4::from_rotation_z(timestamp as f32 * 0.001);
-        let translation = Mat4::from_translation(Vec3::new(0.0, 0.0, time.sin() as f32 * 10.0));
+        let rotation = Mat4::from_rotation_z(0.0);
+        let translation = Mat4::from_translation(Vec3::new(0.0, 0.0, -50.0));
+        // let rotation = Mat4::from_rotation_z(timestamp as f32 * 0.001);
+        // let translation = Mat4::from_translation(Vec3::new(0.0, 0.0, time.sin() as f32 * 10.0));
         let view = self.view * rotation * translation;
         gl.uniform_matrix4fv_with_f32_array(u_view.as_ref(), false, view.as_ref());
-        
-
         
         // Attach the proj matrix.
         let proj: Mat4 = Mat4::perspective_rh_gl(45.0 * 3.14195 / 180.0,
                                                  self.window_dims.width as f32/ self.window_dims.height as f32,
                                                  0.1,
-                                                 1000.0);
+                                                 5000.0);
         let u_proj = gl.get_uniform_location(shader_program, "u_proj");
         gl.uniform_matrix4fv_with_f32_array(u_proj.as_ref(), false, proj.as_ref());
-
-        // Add modelview transform
-        // let mut rng = rand::thread_rng();
-        let time = timestamp as f32 / 200.0;
-        let scale = Vec3::new(3.0, 3.0, 3.0);
-        let axis  = Vec3::new(1.0, 0.0, 0.0);
-        let rotation = glam::Quat::from_axis_angle(axis, timestamp as f32 / 1000.0);
-        let translation = Vec3::new((time / 2.0).sin() * 2.0, time % 20.0 - 10.0, -50.0);
-        let modelview: Mat4 = Mat4::from_scale_rotation_translation(scale, rotation, translation);
-        // log(format!("{}", modelview).to_string());
-        let modelview_loc = gl.get_uniform_location(shader_program, "u_modelview");
-        gl.uniform_matrix4fv_with_f32_array(modelview_loc.as_ref(), false, modelview.as_ref());
 
 
         
         // Draw geometry
-        gl.draw_arrays_instanced(GL::TRIANGLES, 0, 3, 100);
+        self.mesh.clone().draw(self.gl.as_ref());
+        // gl.draw_arrays_instanced(GL::TRIANGLES, 0, 3, 100);
 
 
         
@@ -284,5 +381,5 @@ impl App {
 }
 
 fn main() {
-    yew::Renderer::<App>::new().render();
+    yew::start_app::<App>();
 }

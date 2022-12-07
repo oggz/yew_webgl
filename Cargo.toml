@@ -9,14 +9,16 @@ license = "MIT OR Apache-2.0"
 js-sys = "0.3"
 wasm-bindgen = "0.2"
 stdweb = "0.4.20"
-yew = { git = "https://github.com/yewstack/yew/", features = ["csr"] }
+# yew = { git = "https://github.com/yewstack/yew/", features = ["csr"] }
+yew = "0.19.3"
 # gloo-render = "0.1"
 # gloo-events = "0.1.2"
 # gloo-console = "0.2.1"
 gloo = "0.7.0"
-glam = "0.8.2"
+glam = "0.20.5"
 getrandom = { version = "0.2", features = ["js"] }
 rand = "0.8.5"
+rayon = "1.5.3"
 
 [dependencies.web-sys]
 version = "0.3"

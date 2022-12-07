@@ -21,7 +21,7 @@ impl Shader {
     }
 
     pub fn compile(&mut self, gl_context: Option<GL>) {
-        log(self.vs_source.as_str().to_string());
+        // log(self.vs_source.as_str().to_string());
 
         let gl = gl_context.as_ref().expect("Context not found");
         let vert_shader = gl.create_shader(GL::VERTEX_SHADER).unwrap();
